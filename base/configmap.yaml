@@ -1,0 +1,356 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: files
+data:
+  index: |
+    [
+      {
+        "displayName": "[BNBoc] Ansible",
+        "description": "BNBoc Networks Developemt environment for Ansible",
+        "tags": [
+          "Community",
+          "Ansible",
+          "Molecule"
+        ],
+        "icon": "/images/type-ansible.svg",
+        "links": {
+          "v2": "https://github.com/devspaces-samples/ansible-devspaces-demo/tree/devspaces-3-rhel-8",
+          "devWorkspaces": {
+            "che-incubator/che-idea/latest": "/devfiles/ansible__ansible-demo/devworkspace-che-idea-latest.yaml",
+            "che-incubator/che-code/latest": "/devfiles/ansible__ansible-demo/devworkspace-custom.yaml"
+          }
+        }
+      }
+    ]
+
+  devworkspace-custom.yaml: |
+    apiVersion: workspace.devfile.io/v1alpha2
+    kind: DevWorkspaceTemplate
+    metadata:
+      name: che-code-ansible-demo
+    spec:
+      commands:
+        - id: init-container-command
+          apply:
+            component: che-code-injector
+        - id: init-che-code-command
+          exec:
+            component: che-code-runtime-description
+            commandLine: >-
+              nohup /checode/entrypoint-volume.sh > /checode/entrypoint-logs.txt
+              2>&1 &
+      events:
+        preStart:
+          - init-container-command
+        postStart:
+          - init-che-code-command
+      components:
+        - name: che-code-injector
+          container:
+            image: registry.redhat.io/devspaces/code-rhel8@sha256:02c8f907dc2e18c61fa643accbf8378f385d3368af49794a78b9529cc63eb636
+            command:
+              - /entrypoint-init-container.sh
+            volumeMounts:
+              - name: checode
+                path: /checode
+            memoryLimit: 256Mi
+            memoryRequest: 32Mi
+            cpuLimit: 500m
+            cpuRequest: 30m
+        - name: che-code-runtime-description
+          container:
+            image: registry.redhat.io/devspaces/udi-rhel8@sha256:d147892c643a0127cfcf868daee0ff416a8df922fe2a7c716ebfc457ff526fa2
+            memoryLimit: 1024Mi
+            memoryRequest: 256Mi
+            cpuLimit: 500m
+            cpuRequest: 30m
+            volumeMounts:
+              - name: checode
+                path: /checode
+            endpoints:
+              - name: che-code
+                attributes:
+                  type: main
+                  cookiesAuthEnabled: true
+                  discoverable: false
+                  urlRewriteSupported: true
+                targetPort: 3100
+                exposure: public
+                secure: true
+                protocol: https
+              - name: code-redirect-1
+                targetPort: 13131
+                exposure: public
+                protocol: https
+                attributes:
+                  discoverable: false
+                  urlRewriteSupported: false
+              - name: code-redirect-2
+                targetPort: 13132
+                exposure: public
+                protocol: https
+                attributes:
+                  discoverable: false
+                  urlRewriteSupported: false
+              - name: code-redirect-3
+                targetPort: 13133
+                exposure: public
+                protocol: https
+                attributes:
+                  discoverable: false
+                  urlRewriteSupported: false
+          attributes:
+            app.kubernetes.io/component: che-code-runtime
+            app.kubernetes.io/part-of: che-code.eclipse.org
+            controller.devfile.io/container-contribution: true
+        - name: checode
+          volume: {}
+    ---
+    apiVersion: workspace.devfile.io/v1alpha2
+    kind: DevWorkspace
+    metadata:
+      name: ansible-demo
+      annotations:
+        che.eclipse.org/devfile: |
+          schemaVersion: 2.2.2
+          metadata:
+            name: ansible-demo
+          components:
+            - name: tooling-container
+              attributes:
+                che-theia.eclipse.org/vscode-extensions:
+                  - 'relative:extension/resources/github_com/microsoft/vscode-python/releases/download/2020_7_94776/ms-python-release.vsix'
+                che-theia.eclipse.org/vscode-preferences:
+                  python.globalModuleInstallation: true
+                pod-overrides:
+                  metadata:
+                    annotations:
+                        k8s.v1.cni.cncf.io/networks: |
+                          [
+                            {
+                              "name": "eve-l2-network",
+                              "ips": ["192.168.100.101/24"]
+                            }
+                          ]   
+              container:
+                image: >-
+                  ghcr.io/ansible/ansible-workspace-env-reference@sha256:03d7f0fe6caaae62ff2266906b63d67ebd9cf6e4a056c7c0a0c1320e6cfbebce
+                memoryRequest: 256M
+                memoryLimit: 6Gi
+                cpuRequest: 250m
+                cpuLimit: 2000m
+                args:
+                  - tail
+                  - '-f'
+                  - /dev/null
+                env:
+                  - name: ANSIBLE_COLLECTIONS_PATH
+                    value: >-
+                      ~/.ansible/collections:/usr/share/ansible/collections:/projects/ansible-devspaces-demo/collections
+          commands:
+            - id: molecule-create
+              exec:
+                label: '1.Molecule: start a test pod for the automation'
+                commandLine: source $HOME/.bashrc && molecule create
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: molecule-list
+              exec:
+                label: '2.Molecule: view the test instance that was created'
+                commandLine: source $HOME/.bashrc && molecule list
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: molecule-converge
+              exec:
+                label: '3.Molecule: apply the role to the pod'
+                commandLine: source $HOME/.bashrc && molecule converge
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: molecule-verify
+              exec:
+                label: '4.Molecule: run the verification against the test pod'
+                commandLine: source $HOME/.bashrc && molecule verify
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: molecule-destroy
+              exec:
+                label: '5.Molecule: reset the test pod back to a fresh instance'
+                commandLine: source $HOME/.bashrc && molecule destroy
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: molecule-test
+              exec:
+                label: '6.Molecule: run the full molecule test'
+                commandLine: source $HOME/.bashrc && molecule test
+                workingDir: >-
+                  ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+                group:
+                  kind: run
+                  isDefault: true
+                component: tooling-container
+            - id: ansible-navigator
+              exec:
+                label: 'Ansible-Navigator: Start ansible-navigator'
+                commandLine: >
+                  if [ ! -d "$HOME/.cache/ansible-navigator" ]; then
+                    mkdir -p "$HOME/.cache/ansible-navigator"
+                  fi
+
+                  cp
+                  /usr/local/lib/python3.11/site-packages/ansible_navigator/data/catalog_collections.py
+                  $HOME/.cache/ansible-navigator
+
+                  ansible-navigator --ee false
+                workingDir: ${PROJECTS_ROOT}/ansible-devspaces-demo
+                component: tooling-container
+          events:
+            preStop:
+              - molecule-destroy
+          projects:
+            - name: ansible-devspaces-demo
+              zip:
+                location: '{{ INTERNAL_URL }}/resources/v2/ansible-devspaces-demo.zip'
+    spec:
+      started: true
+      routingClass: che
+      template:
+        components:
+          - name: tooling-container
+            attributes:
+              che-theia.eclipse.org/vscode-extensions:
+                - 'relative:extension/resources/github_com/microsoft/vscode-python/releases/download/2020_7_94776/ms-python-release.vsix'
+              che-theia.eclipse.org/vscode-preferences:
+                python.globalModuleInstallation: true
+              pod-overrides:
+                metadata:
+                  annotations:
+                      k8s.v1.cni.cncf.io/networks: |
+                        [
+                          {
+                            "name": "eve-l2-network",
+                            "ips": ["192.168.100.101/24"]
+                          }
+                        ]   
+            container:
+              image: >-
+                ghcr.io/ansible/ansible-workspace-env-reference@sha256:03d7f0fe6caaae62ff2266906b63d67ebd9cf6e4a056c7c0a0c1320e6cfbebce
+              memoryRequest: 256M
+              memoryLimit: 6Gi
+              cpuRequest: 250m
+              cpuLimit: 2000m
+              args:
+                - tail
+                - '-f'
+                - /dev/null
+              env:
+                - name: ANSIBLE_COLLECTIONS_PATH
+                  value: >-
+                    ~/.ansible/collections:/usr/share/ansible/collections:/projects/ansible-devspaces-demo/collections
+        commands:
+          - id: molecule-create
+            exec:
+              label: '1.Molecule: start a test pod for the automation'
+              commandLine: source $HOME/.bashrc && molecule create
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: molecule-list
+            exec:
+              label: '2.Molecule: view the test instance that was created'
+              commandLine: source $HOME/.bashrc && molecule list
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: molecule-converge
+            exec:
+              label: '3.Molecule: apply the role to the pod'
+              commandLine: source $HOME/.bashrc && molecule converge
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: molecule-verify
+            exec:
+              label: '4.Molecule: run the verification against the test pod'
+              commandLine: source $HOME/.bashrc && molecule verify
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: molecule-destroy
+            exec:
+              label: '5.Molecule: reset the test pod back to a fresh instance'
+              commandLine: source $HOME/.bashrc && molecule destroy
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: molecule-test
+            exec:
+              label: '6.Molecule: run the full molecule test'
+              commandLine: source $HOME/.bashrc && molecule test
+              workingDir: >-
+                ${PROJECTS_ROOT}/ansible-devspaces-demo/collections/ansible_collections/sample_namespace/sample_collection/extensions
+              group:
+                kind: run
+                isDefault: true
+              component: tooling-container
+          - id: ansible-navigator
+            exec:
+              label: 'Ansible-Navigator: Start ansible-navigator'
+              commandLine: >
+                if [ ! -d "$HOME/.cache/ansible-navigator" ]; then
+                  mkdir -p "$HOME/.cache/ansible-navigator"
+                fi
+
+                cp
+                /usr/local/lib/python3.11/site-packages/ansible_navigator/data/catalog_collections.py
+                $HOME/.cache/ansible-navigator
+
+                ansible-navigator --ee false
+              workingDir: ${PROJECTS_ROOT}/ansible-devspaces-demo
+              component: tooling-container
+        events:
+          preStop:
+            - molecule-destroy
+        projects:
+          - name: ansible-devspaces-demo
+            zip:
+              location: '{{ INTERNAL_URL }}/resources/v2/ansible-devspaces-demo.zip'
+      contributions:
+        - name: editor
+          kubernetes:
+            name: che-code-ansible-demo
